@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>거래처별 매출 그래프</title>
+    <!-- Tailwind CSS를 CDN으로 불러와서 스타일링에 사용합니다. -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js를 CDN으로 불러와서 그래프를 그립니다. -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+    </style>
+</head>
+<body class="p-6">
+    <div class="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-lg border border-gray-200">
+        <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">거래처별 총 매출액</h1>
+        <div class="relative w-full h-96">
+            <canvas id="salesChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // 제공된 데이터를 JavaScript 배열로 변환합니다.
+            const rawData = [
+                { client: '에코마트', amount: 69991 },
+                { client: '그린푸드', amount: 821987 },
+                { client: '동서상사', amount: 496682 },
+                { client: '한빛상사', amount: 709784 },
+                { client: '더블유상회', amount: 395610 },
+                { client: '에코마트', amount: 380567 },
+                { client: '그린푸드', amount: 353925 },
+                { client: '한빛상사', amount: 632032 },
+                { client: '삼정유통', amount: 546482 },
+                { client: '삼정유통', amount: 148231 },
+                { client: '더블유상회', amount: 440136 },
+                { client: '더블유상회', amount: 297826 },
+                { client: '동서상사', amount: 741276 },
+                { client: '삼정유통', amount: 886997 },
+                { client: '스타유통', amount: 671470 },
+                { client: '그린푸드', amount: 140975 },
+                { client: '그린푸드', amount: 327387 },
+                { client: '에코마트', amount: 987928 },
+                { client: '그린푸드', amount: 433076 },
+                { client: '에코마트', amount: 921815 }
+            ];
+
+            // 거래처별 매출액 합계를 계산합니다.
+            const salesByClient = rawData.reduce((acc, curr) => {
+                acc[curr.client] = (acc[curr.client] || 0) + curr.amount;
+                return acc;
+            }, {});
+
+            // 데이터를 매출액 순으로 정렬합니다.
+            const sortedClients = Object.keys(salesByClient).sort((a, b) => salesByClient[b] - salesByClient[a]);
+            const labels = sortedClients;
+            const dataValues = sortedClients.map(client => salesByClient[client]);
+
+            const ctx = document.getElementById('salesChart').getContext('2d');
+
+            // Chart.js를 사용하여 막대 그래프를 생성합니다.
+            const salesChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '총 매출액 (원)',
+                        data: dataValues,
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.8)',
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(249, 115, 22, 0.8)',
+                            'rgba(245, 158, 11, 0.8)',
+                            'rgba(139, 92, 246, 0.8)',
+                            'rgba(239, 68, 68, 0.8)',
+                            'rgba(251, 191, 36, 0.8)',
+                            'rgba(34, 197, 94, 0.8)'
+                        ],
+                        borderColor: [
+                            'rgba(59, 130, 246, 1)',
+                            'rgba(16, 185, 129, 1)',
+                            'rgba(249, 115, 22, 1)',
+                            'rgba(245, 158, 11, 1)',
+                            'rgba(139, 92, 246, 1)',
+                            'rgba(239, 68, 68, 1)',
+                            'rgba(251, 191, 36, 1)',
+                            'rgba(34, 197, 94, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '총 매출액 (원)',
+                                font: {
+                                    size: 14
+                                }
+                            },
+                            ticks: {
+                                callback: function(value, index, values) {
+                                    return value.toLocaleString('ko-KR');
+                                }
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '거래처명',
+                                font: {
+                                    size: 14
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += new Intl.NumberFormat('ko-KR').format(context.parsed.y) + '원';
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
