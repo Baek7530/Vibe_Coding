@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>학원 수강생 관리 프로그램</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+        .container {
+            max-width: 900px;
+        }
+        .form-input, .form-select {
+            @apply w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500;
+        }
+    </style>
+</head>
+<body class="p-6">
+    <div id="auth-status" class="text-center text-sm mb-4"></div>
+    <div class="container mx-auto p-6 bg-white rounded-2xl shadow-xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-extrabold text-blue-600 mb-2">학원 수강생 관리</h1>
+            <p class="text-gray-500 text-lg">새로운 수강생을 등록하고 정보를 관리하세요.</p>
+        </header>
+
+        <!-- 수강생 등록 폼 -->
+        <div class="mb-8 p-6 bg-blue-50 rounded-xl border border-blue-200">
+            <h2 class="text-2xl font-bold mb-4 text-blue-700">새 수강생 등록</h2>
+            <form id="student-form" class="space-y-4">
+                <div>
+                    <label for="name" class="block text-sm font-medium text-gray-700">이름</label>
+                    <input type="text" id="name" name="name" required class="form-input mt-1">
+                </div>
+                <div>
+                    <label for="contact" class="block text-sm font-medium text-gray-700">연락처</label>
+                    <input type="text" id="contact" name="contact" required class="form-input mt-1">
+                </div>
+                <div>
+                    <label for="subject" class="block text-sm font-medium text-gray-700">수강 과목</label>
+                    <select id="subject" name="subject" required class="form-select mt-1">
+                        <option value="">과목 선택</option>
+                        <option value="수학">수학</option>
+                        <option value="국어">국어</option>
+                        <option value="영어">영어</option>
+                        <option value="과학">과학</option>
+                        <option value="사회">사회</option>
+                    </select>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button type="submit" id="submit-button" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-300 shadow-md">
+                        등록하기
+                    </button>
+                    <button type="button" id="cancel-button" class="hidden flex-1 px-4 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition duration-300">
+                        취소
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- 수강생 검색 및 목록 -->
+        <div class="p-6 bg-white rounded-xl border border-gray-200 shadow-md">
+            <h2 class="text-2xl font-bold mb-4 text-gray-700">수강생 목록</h2>
+            <div class="mb-4">
+                <input type="text" id="search-input" placeholder="이름 또는 과목으로 검색..." class="form-input">
+            </div>
+            <div id="student-list" class="space-y-4">
+                <p id="loading-message" class="text-center text-gray-500">데이터를 불러오는 중입니다...</p>
+            </div>
+        </div>
+        <div id="error-message" class="mt-4 text-center text-red-500 hidden"></div>
+    </div>
+
+    <!-- Firebase SDK (v11.6.1) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, onSnapshot, doc, updateDoc, deleteDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase 설정 및 초기화
+        setLogLevel('debug');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const __initial_auth_token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // HTML 요소 가져오기
+        const studentForm = document.getElementById('student-form');
+        const studentList = document.getElementById('student-list');
+        const nameInput = document.getElementById('name');
+        const contactInput = document.getElementById('contact');
+        const subjectSelect = document.getElementById('subject');
+        const submitButton = document.getElementById('submit-button');
+        const cancelButton = document.getElementById('cancel-button');
+        const searchInput = document.getElementById('search-input');
+        const loadingMessage = document.getElementById('loading-message');
+        const authStatus = document.getElementById('auth-status');
+        const errorMessage = document.getElementById('error-message');
+
+        let editingId = null;
+
+        // Firebase 인증 상태 관리 및 데이터 가져오기
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                const userId = user.uid;
+                authStatus.textContent = `사용자 ID: ${userId}`;
+                console.log("Firebase 인증 성공. UID:", userId);
+                fetchStudents();
+            } else {
+                try {
+                    if (__initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    console.error("Firebase 인증 실패:", error);
+                    errorMessage.textContent = "인증에 실패했습니다. 페이지를 새로고침해주세요.";
+                    errorMessage.classList.remove('hidden');
+                    loadingMessage.textContent = '데이터를 불러올 수 없습니다. 인증 오류를 확인하세요.';
+                }
+            }
+        });
+
+        // Firestore 컬렉션 참조
+        const studentsCol = collection(db, 'artifacts', appId, 'users', auth.currentUser?.uid || 'anonymous', 'students');
+
+        // Firestore에서 실시간으로 수강생 데이터 불러오기
+        const fetchStudents = async () => {
+            try {
+                const q = query(studentsCol, orderBy('name'));
+                onSnapshot(q, (snapshot) => {
+                    studentList.innerHTML = '';
+                    loadingMessage.classList.add('hidden');
+                    
+                    if (snapshot.empty) {
+                        studentList.innerHTML = '<p class="text-center text-gray-500">등록된 수강생이 없습니다.</p>';
+                        return;
+                    }
+                    
+                    snapshot.forEach(doc => {
+                        const student = doc.data();
+                        const studentId = doc.id;
+                        const studentItem = document.createElement('div');
+                        studentItem.className = 'p-4 bg-gray-50 rounded-lg shadow-sm flex items-center justify-between transition duration-200 hover:bg-gray-100';
+                        studentItem.innerHTML = `
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-800">${student.name}</h3>
+                                <p class="text-sm text-gray-500">연락처: ${student.contact}</p>
+                                <p class="text-sm text-gray-500">과목: ${student.subject}</p>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button class="edit-btn px-3 py-1 bg-yellow-400 text-white text-sm rounded-lg hover:bg-yellow-500 transition-colors" data-id="${studentId}">수정</button>
+                                <button class="delete-btn px-3 py-1 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors" data-id="${studentId}">삭제</button>
+                            </div>
+                        `;
+                        studentList.appendChild(studentItem);
+                    });
+                });
+            } catch (e) {
+                console.error("수강생 데이터를 불러오는 중 오류 발생: ", e);
+                loadingMessage.textContent = '데이터를 불러오는 데 실패했습니다.';
+                errorMessage.textContent = '데이터 로딩 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+                errorMessage.classList.remove('hidden');
+            }
+        };
+
+        // 수강생 등록 및 수정
+        studentForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = nameInput.value;
+            const contact = contactInput.value;
+            const subject = subjectSelect.value;
+            
+            if (editingId) {
+                // 수정
+                try {
+                    const studentRef = doc(db, 'artifacts', appId, 'users', auth.currentUser?.uid, 'students', editingId);
+                    await updateDoc(studentRef, {
+                        name,
+                        contact,
+                        subject
+                    });
+                    console.log("수강생 정보가 성공적으로 업데이트되었습니다.");
+                } catch (e) {
+                    console.error("수강생 정보 업데이트 중 오류 발생: ", e);
+                    errorMessage.textContent = "수강생 정보 업데이트에 실패했습니다.";
+                    errorMessage.classList.remove('hidden');
+                }
+            } else {
+                // 등록
+                try {
+                    await addDoc(studentsCol, {
+                        name,
+                        contact,
+                        subject,
+                        createdAt: new Date()
+                    });
+                    console.log("새 수강생이 성공적으로 등록되었습니다.");
+                } catch (e) {
+                    console.error("수강생 등록 중 오류 발생: ", e);
+                    errorMessage.textContent = "새 수강생 등록에 실패했습니다.";
+                    errorMessage.classList.remove('hidden');
+                }
+            }
+            
+            // 폼 초기화 및 상태 변경
+            studentForm.reset();
+            editingId = null;
+            submitButton.textContent = '등록하기';
+            cancelButton.classList.add('hidden');
+        });
+
+        // 수정/삭제 버튼 클릭 이벤트
+        studentList.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('edit-btn')) {
+                // 수정 버튼
+                editingId = e.target.dataset.id;
+                const studentDocRef = doc(db, 'artifacts', appId, 'users', auth.currentUser?.uid, 'students', editingId);
+                const docSnap = await getDoc(studentDocRef);
+                if (docSnap.exists()) {
+                    const student = docSnap.data();
+                    nameInput.value = student.name;
+                    contactInput.value = student.contact;
+                    subjectSelect.value = student.subject;
+                    submitButton.textContent = '수정 완료';
+                    cancelButton.classList.remove('hidden');
+                } else {
+                    console.error("수정할 수강생 문서를 찾을 수 없습니다.");
+                    errorMessage.textContent = "수정할 데이터를 찾을 수 없습니다.";
+                    errorMessage.classList.remove('hidden');
+                }
+            } else if (e.target.classList.contains('delete-btn')) {
+                // 삭제 버튼
+                const confirmDelete = true; // 실제 앱에서는 모달창으로 확인
+                if (confirmDelete) {
+                    const studentId = e.target.dataset.id;
+                    try {
+                        const studentDocRef = doc(db, 'artifacts', appId, 'users', auth.currentUser?.uid, 'students', studentId);
+                        await deleteDoc(studentDocRef);
+                        console.log("수강생이 성공적으로 삭제되었습니다.");
+                    } catch (e) {
+                        console.error("수강생 삭제 중 오류 발생: ", e);
+                        errorMessage.textContent = "수강생 삭제에 실패했습니다.";
+                        errorMessage.classList.remove('hidden');
+                    }
+                }
+            }
+        });
+
+        // 검색 기능
+        searchInput.addEventListener('input', async (e) => {
+            const searchTerm = e.target.value.toLowerCase().trim();
+            const studentItems = studentList.querySelectorAll('.p-4');
+            studentItems.forEach(item => {
+                const name = item.querySelector('h3').textContent.toLowerCase();
+                const subject = item.querySelector('p:last-child').textContent.toLowerCase();
+                if (name.includes(searchTerm) || subject.includes(searchTerm)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+
+        // 수정 취소
+        cancelButton.addEventListener('click', () => {
+            studentForm.reset();
+            editingId = null;
+            submitButton.textContent = '등록하기';
+            cancelButton.classList.add('hidden');
+        });
+    </script>
+</body>
+</html>
